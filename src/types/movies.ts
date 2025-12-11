@@ -21,3 +21,9 @@ export interface MoviesResponse {
     total_results: number;
     results: Movie[];
 }
+
+export interface TrendingMovie {
+    id: number;
+    title: string;
+    popularity: number;
+}

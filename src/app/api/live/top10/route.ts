@@ -1,42 +1,28 @@
 export const runtime = "edge";
 
-import type { Movie } from "@/types/movies";
+import { trendingMovies } from "@/lib/constants/trendingMovies";
+import { TrendingMovie } from "@/types/movies";
 
-// Server-only type — not sent to client
-type MovieInternal = Movie & { _momentum: number };
+// Internal type used during simulation
+type MovieInternal = TrendingMovie & { _momentum: number };
 
-// Use TMDB v3 key (query param)
-const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/movie/top_rated?api_key=${process.env.TMDB_API_KEY}`;
-
-export async function GET(req: Request) {
-    // Fetch top movies from TMDB using v3 API key
-    const tmdbRes = await fetch(API_URL, {
-        cache: "no-store",
-    });
-
-    const data = await tmdbRes.json();
-
-    if (!data.results) {
-        console.error("TMDB returned invalid data:", data);
-        return new Response("Invalid TMDB API response", { status: 500 });
-    }
-
-    // Template list for cloning per client
-    const templateMovies: MovieInternal[] = data.results
-        .slice(0, 10)
-        .map((m: Movie) => ({ ...m, _momentum: 0 }));
+export function GET(req: Request) {
+    const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
         start(controller) {
-            // Per-client simulation copy
-            const movies = templateMovies.map(m => ({ ...m }));
+            // Create per-client movie state
+            const movies: MovieInternal[] = trendingMovies.map(m => ({
+                ...m,
+                _momentum: 0,
+            }));
 
-            // Initial send
+            // Send initial full snapshot
             controller.enqueue(
-                `event: initial\ndata: ${JSON.stringify(movies)}\n\n`
+                encoder.encode(`event: initial\ndata: ${JSON.stringify(movies)}\n\n`)
             );
 
-            // Live updates every 1 second
+            // Start live updates
             const intervalId = setInterval(() => {
                 for (const movie of movies) {
                     const drift = (Math.random() - 0.5) * 0.8;
@@ -51,21 +37,26 @@ export async function GET(req: Request) {
 
                     if (movie.popularity < 0) movie.popularity = 0;
 
-                    const delta = { id: movie.id, popularity: movie.popularity };
-
                     controller.enqueue(
-                        `event: delta\ndata: ${JSON.stringify(delta)}\n\n`
+                        encoder.encode(
+                            `event: delta\ndata: ${JSON.stringify({
+                                id: movie.id,
+                                popularity: movie.popularity,
+                            })}\n\n`
+                        )
                     );
                 }
             }, 1000);
 
-            // Cleanup on disconnect
+            // Cleanup if client disconnects
             req.signal.addEventListener("abort", () => {
                 clearInterval(intervalId);
+                controller.close();
             });
         },
     });
 
+    // Return SSE response
     return new Response(stream, {
         headers: {
             "Content-Type": "text/event-stream",
