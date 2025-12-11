@@ -1,6 +1,7 @@
 import { Movie } from "@/types/movies";
 import MovieListSlider from "./MovieListSlider";
 import { ReactNode } from "react";
+import { GetRegionName } from "./GetRegionName";
 
 interface Props {
     regionPromise?: Promise<string>;
@@ -16,7 +17,7 @@ export default async function MovieList({ regionPromise, fetchFn, children }: Pr
         <div className="text-2xl mt-10">
             <h2 className="mb-10">
                 {children}
-                {region && ` in ${region}`}
+                {region && <GetRegionName code={region} />}
             </h2>
             <MovieListSlider movies={movies} />
         </div>
